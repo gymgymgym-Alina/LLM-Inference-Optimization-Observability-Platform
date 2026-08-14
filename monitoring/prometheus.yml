@@ -1,0 +1,18 @@
+# 5s scrape keeps dashboards responsive during 5-minute load-test tiers;
+# fine for a single-target setup (would be too aggressive at real fleet scale).
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: llm-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:8000"]
+
+  # Only resolves when the dcgm-exporter service is up (GPU hosts,
+  # via docker-compose.gpu.yml). On CPU-only hosts this target just
+  # shows as down in Prometheus — harmless.
+  - job_name: dcgm
+    static_configs:
+      - targets: ["dcgm-exporter:9400"]

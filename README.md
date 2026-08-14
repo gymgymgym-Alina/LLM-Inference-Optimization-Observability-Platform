@@ -2,14 +2,17 @@
 
 Deploying Qwen2.5-1.5B-Instruct as a production-style API service, then driving latency/throughput improvements through a measure → optimize → re-measure loop: load testing, hand-written dynamic batching (benchmarked against vLLM), quantization, and full observability with Prometheus/Grafana. Every optimization claim is backed by a real load-test run logged in [experiments.md](experiments.md) — see [CLAUDE.md](CLAUDE.md) for the full project context and timeline.
 
-## Status: Phase 1 (baseline service)
+## Status: Phase 2 (load testing + observability)
 
-Baseline only — no batching, no queueing, one request handled at a time. This is deliberate: it's the reference point every later optimization gets measured against.
+The service is still the deliberately-serial baseline (one request on the model at a time, enforced by an explicit lock), now instrumented: Prometheus metrics, Grafana dashboard, and a Locust concurrency ladder. Next step is collecting baseline P50/P99/QPS/GPU-util data on a GPU box — see [docs/loadtest-runbook.md](docs/loadtest-runbook.md).
 
 ## Layout
 
-- `app/` — the inference service (`main.py`: FastAPI + transformers, `/generate` + `/health`)
+- `app/` — the inference service (`main.py`: FastAPI + transformers, `/generate` + `/health` + `/metrics`)
+- `loadtest/` — Locust script (fixed prompt/length for reproducibility) + `run_tiers.sh` concurrency ladder
+- `monitoring/` — Prometheus scrape config, Grafana provisioning + dashboard
 - `Dockerfile`, `docker-compose.yml`, `docker-compose.gpu.yml` — containerized deployment (CPU locally, GPU on a rented box)
+- `scripts/gpu_util_log.sh` — nvidia-smi fallback GPU-util logger for pods where dcgm-exporter can't run
 - `experiments.md` — every load test / optimization run, with real measured numbers
 - `week1-docker-basics/` — a standalone Docker/FastAPI warm-up exercise, not part of the actual service
 
@@ -35,13 +38,26 @@ curl -X POST localhost:8000/generate \
   -d '{"prompt": "What is the capital of France?", "max_new_tokens": 32}'
 ```
 
-## Run in Docker
+## Run in Docker (API + Prometheus + Grafana)
 
 ```bash
 docker compose up --build
 ```
 
-Same `curl` commands as above, still against `localhost:8000`. This uses CPU unless you're on a GPU host — see [docs/gpu-deployment.md](docs/gpu-deployment.md) to run it on a rented GPU box.
+- API: `localhost:8000` (same `curl` commands as above; metrics at `localhost:8000/metrics/`)
+- Prometheus: `localhost:9090` (Status → Targets should show `llm-api` up; `dcgm` is down on CPU hosts, that's expected)
+- Grafana: `localhost:3000` — the "LLM Inference Service" dashboard is auto-provisioned (anonymous access enabled, no login)
+
+This uses CPU unless you're on a GPU host — see [docs/gpu-deployment.md](docs/gpu-deployment.md) / [docs/loadtest-runbook.md](docs/loadtest-runbook.md) for the GPU box.
+
+## Load testing
+
+```bash
+pip install -r loadtest/requirements.txt
+./loadtest/run_tiers.sh http://localhost:8000 local-check 1m   # local pipeline check (numbers don't count)
+```
+
+For real measurements on a GPU box, follow [docs/loadtest-runbook.md](docs/loadtest-runbook.md) — 5 minutes per tier, results recorded in [experiments.md](experiments.md).
 
 ## API
 

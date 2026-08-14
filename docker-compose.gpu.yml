@@ -9,3 +9,18 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+
+  # Exposes GPU utilization/memory as Prometheus metrics on :9400.
+  # If this image fails to start on your rented box (some container-based
+  # pods don't allow it), fall back to scripts/gpu_util_log.sh instead.
+  dcgm-exporter:
+    image: nvcr.io/nvidia/k8s/dcgm-exporter:3.3.5-3.4.1-ubuntu22.04
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    cap_add:
+      - SYS_ADMIN
